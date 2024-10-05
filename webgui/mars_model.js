@@ -55,6 +55,36 @@ async function init() {
     renderer.setPixelRatio(window.devicePixelRatio);
     document.body.appendChild(renderer.domElement);
 
+    // const loader = new THREE.GLTFLoader();
+    // loader.load('24881_Mars_1_6792.gltf', function(gltf) {
+    //     mars = gltf.scene;
+    //     scene.add(mars);
+        
+    //     const box = new THREE.Box3().setFromObject(mars);
+    //     const center = box.getCenter(new THREE.Vector3());
+    //     const size = box.getSize(new THREE.Vector3());
+    //     const maxDim = Math.max(size.x, size.y, size.z);
+    //     const scale = 2 / maxDim;
+    //     mars.scale.set(scale, scale, scale);
+    //     mars.position.sub(center.multiplyScalar(scale));
+    
+    //     // Obracamy model tak, aby InSight było widoczne z przodu
+    //     mars.rotation.y = Math.PI - INSIGHT_LONGITUDE;
+    
+    //     createAtmosphere();
+    //     createInsightMarker();
+    //     createQuakeEffect();
+    //     document.getElementById('info').textContent = 'Model załadowany. Użyj suwaka do kontroli czasu.';
+    
+    //     // Ustawiamy początkową pozycję kamery
+    //     camera.position.set(0, 0, 5);
+    //     camera.lookAt(mars.position);
+    //     controls.update();
+    // }, undefined, function(error) {
+    //     console.error('Błąd ładowania modelu:', error);
+    //     document.getElementById('info').textContent = 'Błąd ładowania modelu. Sprawdź konsolę.';
+    // });
+
     const loader = new THREE.GLTFLoader();
     loader.load('24881_Mars_1_6792.gltf', function(gltf) {
         mars = gltf.scene;
@@ -69,11 +99,11 @@ async function init() {
         mars.position.sub(center.multiplyScalar(scale));
 
         // Obracamy model tak, aby InSight było widoczne z przodu
-        mars.rotation.y = -INSIGHT_LONGITUDE;
+        mars.rotation.y = Math.PI - INSIGHT_LONGITUDE;
 
         createAtmosphere();
-        createQuakeEffect();
         createInsightMarker();
+        createQuakeEffect();
         document.getElementById('info').textContent = 'Model załadowany. Użyj suwaka do kontroli czasu.';
     }, undefined, function(error) {
         console.error('Błąd ładowania modelu:', error);
@@ -122,15 +152,57 @@ function createAtmosphere() {
     scene.add(atmosphereMesh);
 }
 
+function createInsightMarker() {
+    const radius = 1.025;  // Nieco większy niż promień Marsa, aby marker był widoczny
+
+    const x = radius * Math.cos(INSIGHT_LATITUDE) * Math.cos(INSIGHT_LONGITUDE);
+    const y = radius * Math.sin(INSIGHT_LATITUDE);
+    const z = radius * Math.cos(INSIGHT_LATITUDE) * Math.sin(INSIGHT_LONGITUDE);
+
+    const geometry = new THREE.SphereGeometry(0.02, 32, 32);  // Zwiększamy rozmiar markera
+    const material = new THREE.MeshBasicMaterial({ color: 0xffff00 });  // Żółty kolor
+    insightMarker = new THREE.Mesh(geometry, material);
+    
+    insightMarker.position.set(x, y, z);
+    scene.add(insightMarker);
+
+    // Dodajemy etykietę HTML
+    const labelDiv = document.createElement('div');
+    labelDiv.textContent = 'InSight';
+    labelDiv.style.position = 'absolute';
+    labelDiv.style.color = 'white';
+    labelDiv.style.padding = '2px';
+    labelDiv.style.backgroundColor = 'rgba(0,0,0,0.5)';
+    labelDiv.style.fontSize = '12px';
+    document.body.appendChild(labelDiv);
+
+    // Funkcja do aktualizacji pozycji etykiety
+    function updateLabel() {
+        if (insightMarker) {
+            const vector = insightMarker.position.clone();
+            vector.project(camera);
+
+            const widthHalf = window.innerWidth / 2;
+            const heightHalf = window.innerHeight / 2;
+
+            labelDiv.style.left = (vector.x * widthHalf + widthHalf) + 'px';
+            labelDiv.style.top = (-vector.y * heightHalf + heightHalf) + 'px';
+        }
+    }
+
+    // Dodajemy funkcję updateLabel do pętli animacji
+    function animateWithLabel() {
+        requestAnimationFrame(animateWithLabel);
+        updateLabel();
+    }
+    animateWithLabel();
+}
+
 function createQuakeEffect() {
     const geometry = new THREE.SphereGeometry(1.025, 128, 128);
     const material = new THREE.ShaderMaterial({
         uniforms: {
-            epicenter: { value: new THREE.Vector3(
-                Math.cos(INSIGHT_LATITUDE) * Math.cos(INSIGHT_LONGITUDE),
-                Math.sin(INSIGHT_LATITUDE),
-                -Math.cos(INSIGHT_LATITUDE) * Math.sin(INSIGHT_LONGITUDE) // Zmiana znaku dla z
-            )},
+            epicenter: { value: insightMarker.position.clone() },
             quakeIntensity: { value: 0.0 },
             time: { value: 0.0 }
         },
@@ -142,7 +214,7 @@ function createQuakeEffect() {
 
             void main() {
                 vec3 newPosition = position;
-                float distance = distance(normalize(position), epicenter);
+                float distance = distance(normalize(position), normalize(epicenter));
                 float waveEffect = sin(distance * 20.0 - time * 10.0) * 0.5 + 0.5;
                 intensity = (1.0 - distance) * quakeIntensity * waveEffect;
                 newPosition += normal * intensity * 0.05;
@@ -249,52 +321,6 @@ function drawSeismicChart() {
     ctx.stroke();
 }
 
-function createInsightMarker() {
-    const radius = 1.025;  // Nieco większy niż promień Marsa, aby marker był widoczny
-
-    const x = radius * Math.cos(INSIGHT_LATITUDE) * Math.cos(INSIGHT_LONGITUDE);
-    const y = radius * Math.sin(INSIGHT_LATITUDE);
-    const z = -radius * Math.cos(INSIGHT_LATITUDE) * Math.sin(INSIGHT_LONGITUDE); // Zmiana znaku dla z
-
-    const geometry = new THREE.SphereGeometry(0.02, 32, 32);  // Zwiększamy rozmiar markera
-    const material = new THREE.MeshBasicMaterial({ color: 0xffff00 });  // Żółty kolor
-    insightMarker = new THREE.Mesh(geometry, material);
-    
-    insightMarker.position.set(x, y, z);
-    scene.add(insightMarker);
-
-    // Dodajemy etykietę HTML
-    const labelDiv = document.createElement('div');
-    labelDiv.textContent = 'InSight';
-    labelDiv.style.position = 'absolute';
-    labelDiv.style.color = 'white';
-    labelDiv.style.padding = '2px';
-    labelDiv.style.backgroundColor = 'rgba(0,0,0,0.5)';
-    labelDiv.style.fontSize = '12px';
-    document.body.appendChild(labelDiv);
-
-    // Funkcja do aktualizacji pozycji etykiety
-    function updateLabel() {
-        if (insightMarker) {
-            const vector = insightMarker.position.clone();
-            vector.project(camera);
-
-            const widthHalf = window.innerWidth / 2;
-            const heightHalf = window.innerHeight / 2;
-
-            labelDiv.style.left = (vector.x * widthHalf + widthHalf) + 'px';
-            labelDiv.style.top = (-vector.y * heightHalf + heightHalf) + 'px';
-        }
-    }
-
-    // Dodajemy funkcję updateLabel do pętli animacji
-    function animateWithLabel() {
-        requestAnimationFrame(animateWithLabel);
-        updateLabel();
-    }
-    animateWithLabel();
-}
-
 function updateSeismicChart(currentIndex) {
     const canvas = document.getElementById('seismicChart');
     const ctx = canvas.getContext('2d');
@@ -317,6 +343,10 @@ function animate() {
     updateQuake();
     if (insightMarker && mars) {
         insightMarker.quaternion.copy(mars.quaternion);
+    }
+    if (quakeEffect && mars) {
+        quakeEffect.quaternion.copy(mars.quaternion);
+        quakeEffect.material.uniforms.epicenter.value.copy(insightMarker.position);
     }
     renderer.render(scene, camera);
 }
