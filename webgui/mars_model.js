@@ -55,36 +55,6 @@ async function init() {
     renderer.setPixelRatio(window.devicePixelRatio);
     document.body.appendChild(renderer.domElement);
 
-    // const loader = new THREE.GLTFLoader();
-    // loader.load('24881_Mars_1_6792.gltf', function(gltf) {
-    //     mars = gltf.scene;
-    //     scene.add(mars);
-        
-    //     const box = new THREE.Box3().setFromObject(mars);
-    //     const center = box.getCenter(new THREE.Vector3());
-    //     const size = box.getSize(new THREE.Vector3());
-    //     const maxDim = Math.max(size.x, size.y, size.z);
-    //     const scale = 2 / maxDim;
-    //     mars.scale.set(scale, scale, scale);
-    //     mars.position.sub(center.multiplyScalar(scale));
-    
-    //     // Obracamy model tak, aby InSight było widoczne z przodu
-    //     mars.rotation.y = Math.PI - INSIGHT_LONGITUDE;
-    
-    //     createAtmosphere();
-    //     createInsightMarker();
-    //     createQuakeEffect();
-    //     document.getElementById('info').textContent = 'Model załadowany. Użyj suwaka do kontroli czasu.';
-    
-    //     // Ustawiamy początkową pozycję kamery
-    //     camera.position.set(0, 0, 5);
-    //     camera.lookAt(mars.position);
-    //     controls.update();
-    // }, undefined, function(error) {
-    //     console.error('Błąd ładowania modelu:', error);
-    //     document.getElementById('info').textContent = 'Błąd ładowania modelu. Sprawdź konsolę.';
-    // });
-
     const loader = new THREE.GLTFLoader();
     loader.load('24881_Mars_1_6792.gltf', function(gltf) {
         mars = gltf.scene;
@@ -99,7 +69,7 @@ async function init() {
         mars.position.sub(center.multiplyScalar(scale));
 
         // Obracamy model tak, aby InSight było widoczne z przodu
-        mars.rotation.y = Math.PI - INSIGHT_LONGITUDE;
+        mars.rotation.y = -INSIGHT_LONGITUDE;
 
         createAtmosphere();
         createInsightMarker();
@@ -202,7 +172,7 @@ function createQuakeEffect() {
     const geometry = new THREE.SphereGeometry(1.025, 128, 128);
     const material = new THREE.ShaderMaterial({
         uniforms: {
-            epicenter: { value: insightMarker.position.clone() },
+            epicenter: { value: new THREE.Vector3() }, // Inicjalizujemy z wektorem zerowym
             quakeIntensity: { value: 0.0 },
             time: { value: 0.0 }
         },
@@ -213,11 +183,19 @@ function createQuakeEffect() {
             varying float intensity;
 
             void main() {
-                vec3 newPosition = position;
-                float distance = distance(normalize(position), normalize(epicenter));
+                // Transformujemy pozycję do układu światowego
+                vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+
+                // Obliczamy odległość w układzie światowym
+                float distance = distance(normalize(worldPosition.xyz), normalize(epicenter));
+
+                // Reszta kodu pozostaje bez zmian
                 float waveEffect = sin(distance * 20.0 - time * 10.0) * 0.5 + 0.5;
                 intensity = (1.0 - distance) * quakeIntensity * waveEffect;
-                newPosition += normal * intensity * 0.05;
+
+                // Zastosowanie intensywności do pozycji
+                vec3 newPosition = position + normal * intensity * 0.05;
+
                 gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
             }
         `,
@@ -236,6 +214,7 @@ function createQuakeEffect() {
     quakeEffect.visible = false;
     scene.add(quakeEffect);
 }
+
 
 function onWindowResize() {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -293,8 +272,8 @@ function updateQuake() {
     }
 
     if (quakeEffect) {
-        quakeEffect.material.uniforms.quakeIntensity.value = intensity;
-        quakeEffect.material.uniforms.time.value = elapsedTime * 0.001;
+        quakeEffect.material.uniforms.quakeIntensity.value = Math.min(intensity, 1.0);
+        quakeEffect.material.uniforms.time.value = elapsedTime * 0.002;
     }
 }
 
@@ -346,10 +325,16 @@ function animate() {
     }
     if (quakeEffect && mars) {
         quakeEffect.quaternion.copy(mars.quaternion);
-        quakeEffect.material.uniforms.epicenter.value.copy(insightMarker.position);
+
+        // Pobieramy światową pozycję markera InSight
+        var epicenterWorldPos = insightMarker.getWorldPosition(new THREE.Vector3());
+
+        // Aktualizujemy uniform 'epicenter' w shaderze
+        quakeEffect.material.uniforms.epicenter.value.copy(epicenterWorldPos);
     }
     renderer.render(scene, camera);
 }
+
 
 window.addEventListener('DOMContentLoaded', (event) => {
     init();
